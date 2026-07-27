@@ -40,47 +40,6 @@ jobs:
         run: mkdir -p data logs reports
 
       - name: 执行 ETF 组合分析
-run-name: ETF组合午间报告
-
-on:
-  schedule:
-    - cron: '57 5 * * 1-5'
-  workflow_dispatch:
-    inputs:
-      force_run:
-        description: '强制运行（跳过交易日检查）'
-        required: false
-        default: false
-        type: boolean
-
-concurrency:
-  group: etf-midday-report
-  cancel-in-progress: false
-
-jobs:
-  analyze:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v5
-
-      - name: 设置 Python 环境
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-
-      - name: 安装依赖
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: 创建必要目录
-        run: mkdir -p data logs reports
-
-      - name: 执行 ETF 组合分析
         env:
           ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }}
           SERVERCHAN3_SENDKEY: ${{ secrets.SERVERCHAN3_SENDKEY }}
