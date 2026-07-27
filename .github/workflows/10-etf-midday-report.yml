@@ -3,7 +3,7 @@ run-name: ETF组合午间报告
 
 on:
   schedule:
-    - cron: '0 4 * * 1-5'
+    - cron: '37 3 * * 1-5'
   workflow_dispatch:
     inputs:
       force_run:
