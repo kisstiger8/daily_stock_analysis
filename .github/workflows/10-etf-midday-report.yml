@@ -2,8 +2,6 @@ name: ETF组合午间报告
 run-name: ETF组合午间报告
 
 on:
-  schedule:
-    - cron: '57 5 * * 1-5'
   workflow_dispatch:
     inputs:
       force_run:
