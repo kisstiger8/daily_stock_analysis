@@ -4,6 +4,9 @@
 {% if market_status_line %}
 {{ market_status_line }}
 {% endif %}
+{% if failed_results %}
+⚠️ **未完成 AI 分析**: {% for result in failed_results %}{{ result.code }}{{ '、' if not loop.last else '' }}{% endfor %}
+{% endif %}
 
 {% if summary_only %}
 **📊 {{ labels.summary_heading }}**
@@ -23,6 +26,9 @@
 {% set one_sentence = core.get('one_sentence', result.analysis_summary) if core else result.analysis_summary %}
 {% if one_sentence %}
 📌 **{{ one_sentence[:80] }}**
+{% endif %}
+{% if not result.success %}
+❌ **AI 分析异常**: {{ (result.error_message or '未知错误')[:90] }}
 {% endif %}
 {% if intel.get('earnings_outlook') %}
 📊 {{ labels.earnings_outlook_label }}: {{ intel.earnings_outlook[:60] }}
