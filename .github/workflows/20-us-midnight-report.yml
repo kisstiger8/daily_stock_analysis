@@ -2,9 +2,6 @@ name: 美股组合午夜盘中报告
 run-name: 美股组合午夜盘中报告
 
 on:
-  schedule:
-    # Beijing 00:00 Tue-Sat = US trading day late morning/noon.
-    - cron: '0 16 * * 1-5'
   workflow_dispatch:
     inputs:
       force_run:
