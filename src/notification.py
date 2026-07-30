@@ -1608,10 +1608,19 @@ class NotificationService(
 
         report_date = datetime.now().strftime('%Y-%m-%d')
 
-        # 按评分排序
-        sorted_results = sorted(results, key=lambda x: x.sentiment_score, reverse=True)
+        successful_results = [r for r in results if getattr(r, "success", True)]
+        failed_results = [r for r in results if not getattr(r, "success", True)]
 
-        buy_count, sell_count, hold_count = self._count_display_decisions(results, report_language)
+        def sort_score(result: AnalysisResult) -> int:
+            try:
+                return int(getattr(result, "sentiment_score", 0) or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        # 按评分排序，失败项保留在末尾，避免被静默过滤
+        sorted_results = sorted(successful_results, key=sort_score, reverse=True) + failed_results
+
+        buy_count, sell_count, hold_count = self._count_display_decisions(successful_results, report_language)
 
         lines = [
             f"## 🎯 {report_date} {labels['dashboard_title']}",
@@ -1620,6 +1629,12 @@ class NotificationService(
             f"🟢{labels['buy_label']}:{buy_count} 🟡{labels['watch_label']}:{hold_count} 🔴{labels['sell_label']}:{sell_count}",
         ]
         self._append_market_status_line(lines, results, report_language)
+        if failed_results:
+            failed_codes = "、".join(str(getattr(r, "code", "") or "") for r in failed_results)
+            lines.extend([
+                f"⚠️ **未完成 AI 分析**: {failed_codes}",
+                "",
+            ])
 
         # Issue #262: summary_only 时仅输出摘要列表
         if self._report_summary_only:
@@ -1653,6 +1668,10 @@ class NotificationService(
                 one_sentence = core.get('one_sentence', result.analysis_summary) if core else result.analysis_summary
                 if one_sentence:
                     lines.append(f"📌 **{one_sentence[:80]}**")
+                    lines.append("")
+                if not getattr(result, "success", True):
+                    error = str(getattr(result, "error_message", "") or "未知错误")
+                    lines.append(f"❌ **AI 分析异常**: {error[:90]}")
                     lines.append("")
                 # 重要信息区（舆情+基本面）
                 info_lines = []
