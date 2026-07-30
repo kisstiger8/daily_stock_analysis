@@ -135,8 +135,17 @@ def render(
     )
     labels = get_report_labels(report_language)
 
-    # Build template context with pre-computed signal levels (sorted by score)
-    sorted_results = sorted(results, key=lambda x: x.sentiment_score, reverse=True)
+    successful_results = [r for r in results if getattr(r, "success", True)]
+    failed_results = [r for r in results if not getattr(r, "success", True)]
+
+    def sort_score(result: AnalysisResult) -> int:
+        try:
+            return int(getattr(result, "sentiment_score", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    # Build template context with pre-computed signal levels. Keep failed analyses visible at the end.
+    sorted_results = sorted(successful_results, key=sort_score, reverse=True) + failed_results
     sorted_enriched = []
     for r in sorted_results:
         display_action = display_action_fields_for_result(
@@ -170,7 +179,7 @@ def render(
 
     display_buckets = [
         display_decision_type_for_result(r, report_language=report_language)
-        for r in results
+        for r in successful_results
     ]
     buy_count = sum(1 for bucket in display_buckets if bucket == "buy")
     sell_count = sum(1 for bucket in display_buckets if bucket == "sell")
@@ -213,6 +222,7 @@ def render(
         "report_timestamp": report_timestamp,
         "results": sorted_results,
         "enriched": sorted_enriched,  # Sorted by sentiment_score desc
+        "failed_results": failed_results,
         "summary_only": summary_only,
         "buy_count": buy_count,
         "sell_count": sell_count,
