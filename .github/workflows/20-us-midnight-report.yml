@@ -1,0 +1,89 @@
+name: 美股组合午夜盘中报告
+run-name: 美股组合午夜盘中报告
+
+on:
+  schedule:
+    # Beijing 00:00 Tue-Sat = US trading day late morning/noon.
+    - cron: '0 16 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: '强制运行（跳过交易日检查）'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: us-midnight-report
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 创建必要目录
+        run: mkdir -p data logs reports
+
+      - name: 执行美股组合盘中分析
+        env:
+          ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }}
+          SERVERCHAN3_SENDKEY: ${{ secrets.SERVERCHAN3_SENDKEY }}
+          STOCK_LIST: MU,NOK,IREN,DRAM,RKLB,SPCX,NBIS,MRVL,MSFT,TSLA,ORCL
+          REPORT_TYPE: simple
+          REPORT_LANGUAGE: zh
+          SINGLE_STOCK_NOTIFY: 'false'
+          MARKET_REVIEW_ENABLED: 'false'
+          LOG_LEVEL: INFO
+          MAX_WORKERS: '1'
+          ANALYSIS_DELAY: '0'
+          TRADING_DAY_CHECK_ENABLED: 'true'
+          REALTIME_SOURCE_PRIORITY: yfinance,stooq
+        run: |
+          FORCE_RUN_ARG=""
+          if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+            FORCE_RUN_ARG="--force-run"
+            echo "已启用强制运行模式"
+          fi
+
+          echo "美股组合午夜盘中报告"
+          echo "北京时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          echo "美股列表: $STOCK_LIST"
+
+          python main.py --no-market-review $FORCE_RUN_ARG
+
+      - name: 上传分析报告
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: us-midnight-report-${{ github.run_number }}
+          path: |
+            reports/
+            logs/
+          retention-days: 30
+
+      - name: 显示运行结果
+        if: always()
+        run: |
+          echo "美股组合午夜盘中报告完成"
+          if [ -d "reports" ] && [ "$(ls -A reports 2>/dev/null)" ]; then
+            echo "生成的报告:"
+            ls -la reports/
+          else
+            echo "未生成报告文件"
+          fi
