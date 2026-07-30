@@ -3204,8 +3204,9 @@ class StockAnalysisPipeline:
                                 fallback_code=code,
                             )
                     elif result and not result.success:
+                        results.append(result)
                         logger.warning(
-                            f"[{code}] 分析结果标记为失败，不计入汇总: "
+                            f"[{code}] 分析结果标记为失败，将在汇总中标注异常: "
                             f"{result.error_message or '未知原因'}"
                         )
 
@@ -3239,7 +3240,7 @@ class StockAnalysisPipeline:
             )
             fail_count = len(stock_codes) - success_count
         else:
-            success_count = len(results)
+            success_count = sum(1 for result in results if getattr(result, "success", False))
             fail_count = len(stock_codes) - success_count
         
         logger.info("===== 分析完成 =====")
