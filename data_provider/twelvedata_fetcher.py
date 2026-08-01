@@ -32,7 +32,8 @@ class TwelveDataFetcher(BaseFetcher):
         from src.config import get_config
 
         config = get_config()
-        self._api_key = getattr(config, "twelvedata_api_key", None) or os.getenv("TWELVEDATA_API_KEY")
+        raw_api_key = getattr(config, "twelvedata_api_key", None) or os.getenv("TWELVEDATA_API_KEY")
+        self._api_key = str(raw_api_key).strip() if raw_api_key else None
         if not self._api_key:
             logger.debug("[TwelveData] API key not configured, fetcher disabled")
 
