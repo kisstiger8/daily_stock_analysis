@@ -102,6 +102,7 @@ class RealtimeSource(Enum):
     TENCENT = "tencent"             # 腾讯直连
     SINA = "sina"                   # 新浪直连
     STOOQ = "stooq"                 # Stooq 美股兜底
+    TWELVEDATA = "twelvedata"       # Twelve Data 美股实时行情
     LONGBRIDGE = "longbridge"       # 长桥（美股/港股兜底）
     FALLBACK = "fallback"           # 降级兜底
 
@@ -189,7 +190,11 @@ class UnifiedRealtimeQuote:
     
     def has_volume_data(self) -> bool:
         """检查是否有量价数据"""
-        return self.volume_ratio is not None or self.turnover_rate is not None
+        return (
+            (self.volume is not None and self.volume > 0)
+            or self.volume_ratio is not None
+            or self.turnover_rate is not None
+        )
 
 
 @dataclass

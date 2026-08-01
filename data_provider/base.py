@@ -624,6 +624,7 @@ class DataFetcherManager:
         "LongbridgeFetcher": {"hk", "us"},
         "FinnhubFetcher": {"us"},
         "AlphaVantageFetcher": {"us"},
+        "TwelveDataFetcher": {"us"},
     }
     _daily_source_health = CircuitBreaker(failure_threshold=3, cooldown_seconds=300.0)
     _CONCEPT_RANKINGS_CACHE_TTL_SECONDS = 300.0
@@ -1210,6 +1211,13 @@ class DataFetcherManager:
         else:
             logger.debug("[数据源初始化] 跳过未配置的 AlphaVantageFetcher")
 
+        twelvedata_api_key = (getattr(config, "twelvedata_api_key", None) or "").strip()
+        if twelvedata_api_key:
+            from .twelvedata_fetcher import TwelveDataFetcher
+            optional_fetchers.append(TwelveDataFetcher())
+        else:
+            logger.debug("[数据源初始化] 跳过未配置的 TwelveDataFetcher")
+
         # 初始化数据源列表
         self._ensure_concurrency_guards()
         with self._fetchers_lock:
@@ -1680,6 +1688,7 @@ class DataFetcherManager:
             "AkshareFetcher": "akshare",
             "FinnhubFetcher": "finnhub",
             "AlphaVantageFetcher": "alphavantage",
+            "TwelveDataFetcher": "twelvedata",
             "EfinanceFetcher": "efinance",
             "TushareFetcher": "tushare",
         }
@@ -1753,6 +1762,13 @@ class DataFetcherManager:
             logger.debug(f"[实时行情] 功能已禁用，跳过 {stock_code}")
             return None
 
+        # 获取配置的数据源优先级
+        source_priority = [
+            source.strip().lower()
+            for source in config.realtime_source_priority.split(',')
+            if source.strip()
+        ]
+
         # ----------------------------------------------------------
         # 美股 (指数 + 个股) / 港股 — 专用双源路由
         #   配置长桥后: Longbridge 首选, YFinance/AkShare 补充
@@ -1779,7 +1795,16 @@ class DataFetcherManager:
                 logger.info(f"[实时行情] {market_label} {stock_code} 无可用数据源")
             return None
 
-        if is_us or is_hk:
+        us_priority_tokens = {
+            "twelvedata", "yfinance", "stooq", "longbridge", "finnhub", "alphavantage",
+        }
+        use_configured_us_priority = (
+            is_us
+            and not is_us_index
+            and any(source in us_priority_tokens for source in source_priority)
+        )
+
+        if (is_us or is_hk) and not use_configured_us_priority:
             prefer_lb = self._longbridge_preferred() and not is_us_index
             if is_us:
                 primary_src = "LongbridgeFetcher" if prefer_lb else "YfinanceFetcher"
@@ -1818,19 +1843,17 @@ class DataFetcherManager:
                 logger.info(f"[实时行情] {market_label} {stock_code} 无可用数据源")
             return None
         
-        # 获取配置的数据源优先级
-        source_priority = [
-            source.strip().lower()
-            for source in config.realtime_source_priority.split(',')
-            if source.strip()
-        ]
-        
         errors = []
         failed_sources: List[str] = []
         # primary_quote holds the first successful result; we may supplement
         # missing fields (volume_ratio, turnover_rate, etc.) from later sources.
         primary_quote = None
         primary_fallback_from: Optional[str] = None
+        supplement_fields = (
+            self._US_REALTIME_SUPPLEMENT_FIELDS
+            if use_configured_us_priority
+            else self._SUPPLEMENT_FIELDS
+        )
         
         for source_index, source in enumerate(source_priority):
             attempt_start = time.time()
@@ -1899,7 +1922,67 @@ class DataFetcherManager:
                         )
                         quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
 
-                provider_name = fetcher.name if fetcher is not None else source
+                elif source == "twelvedata":
+                    fetcher = self._get_fetcher_by_name("TwelveDataFetcher", capability="realtime_quote")
+                    if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
+                        quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
+
+                elif source == "yfinance":
+                    fetcher = self._get_fetcher_by_name("YfinanceFetcher", capability="realtime_quote")
+                    if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
+                        quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
+
+                elif source == "stooq":
+                    fetcher = self._get_fetcher_by_name("YfinanceFetcher", capability="realtime_quote")
+                    if fetcher is not None and hasattr(fetcher, '_get_us_stock_quote_from_stooq'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider="Stooq",
+                            operation="get_realtime_quote",
+                        )
+                        quote = self._call_fetcher_method(fetcher, '_get_us_stock_quote_from_stooq', raw_stock_code or stock_code)
+
+                elif source == "longbridge":
+                    fetcher = self._get_fetcher_by_name("LongbridgeFetcher", capability="realtime_quote")
+                    if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
+                        quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
+
+                elif source == "finnhub":
+                    fetcher = self._get_fetcher_by_name("FinnhubFetcher", capability="realtime_quote")
+                    if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
+                        quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
+
+                elif source == "alphavantage":
+                    fetcher = self._get_fetcher_by_name("AlphaVantageFetcher", capability="realtime_quote")
+                    if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        record_provider_run_started(
+                            data_type="realtime_quote",
+                            provider=fetcher.name,
+                            operation="get_realtime_quote",
+                        )
+                        quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
+
+                provider_name = "Stooq" if source == "stooq" else fetcher.name if fetcher is not None else source
                 
                 if quote is not None and quote.has_basic_data():
                     record_provider_run(
@@ -1908,7 +1991,7 @@ class DataFetcherManager:
                         operation="get_realtime_quote",
                         success=True,
                         latency_ms=int((time.time() - attempt_start) * 1000),
-                        fallback_to=fallback_to if primary_quote is None and self._quote_needs_supplement(quote) else None,
+                        fallback_to=fallback_to if primary_quote is None and self._quote_needs_supplement(quote, supplement_fields) else None,
                         record_count=1,
                     )
                     if primary_quote is None:
@@ -1917,7 +2000,7 @@ class DataFetcherManager:
                         primary_fallback_from = failed_sources[0] if failed_sources else None
                         logger.info(f"[实时行情] {stock_code} 成功获取 (来源: {source})")
                         # If all key supplementary fields are present, return early
-                        if not self._quote_needs_supplement(primary_quote):
+                        if not self._quote_needs_supplement(primary_quote, supplement_fields):
                             return self._enrich_realtime_quote(
                                 primary_quote,
                                 fallback_from=primary_fallback_from,
@@ -1932,11 +2015,11 @@ class DataFetcherManager:
                         if supplement_attempts > 1:
                             logger.debug(f"[实时行情] {stock_code} 补充尝试已达上限，停止继续")
                             break
-                        merged = self._merge_quote_fields(primary_quote, quote)
+                        merged = self._merge_quote_fields(primary_quote, quote, supplement_fields)
                         if merged:
                             logger.info(f"[实时行情] {stock_code} 从 {source} 补充了缺失字段: {merged}")
                         # Stop supplementing once all key fields are filled
-                        if not self._quote_needs_supplement(primary_quote):
+                        if not self._quote_needs_supplement(primary_quote, supplement_fields):
                             break
                 else:
                     record_provider_run(
@@ -1996,23 +2079,24 @@ class DataFetcherManager:
         'pe_ratio', 'pb_ratio', 'total_mv', 'circ_mv',
         'amplitude',
     ]
+    _US_REALTIME_SUPPLEMENT_FIELDS = ['volume']
 
     @classmethod
-    def _quote_needs_supplement(cls, quote) -> bool:
+    def _quote_needs_supplement(cls, quote, fields: Optional[List[str]] = None) -> bool:
         """Check if any key supplementary field is still None."""
-        for f in cls._SUPPLEMENT_FIELDS:
+        for f in fields or cls._SUPPLEMENT_FIELDS:
             if getattr(quote, f, None) is None:
                 return True
         return False
 
     @classmethod
-    def _merge_quote_fields(cls, primary, secondary) -> list:
+    def _merge_quote_fields(cls, primary, secondary, fields: Optional[List[str]] = None) -> list:
         """
         Copy non-None fields from *secondary* into *primary* where
         *primary* has None. Returns list of field names that were filled.
         """
         filled = []
-        for f in cls._SUPPLEMENT_FIELDS:
+        for f in fields or cls._SUPPLEMENT_FIELDS:
             if getattr(primary, f, None) is None:
                 val = getattr(secondary, f, None)
                 if val is not None:
@@ -2276,7 +2360,13 @@ class DataFetcherManager:
         # 3. 依次尝试各个数据源
         from .akshare_fetcher import _is_us_code
         is_us = _is_us_code(stock_code)
-        _US_CAPABLE_FETCHERS = {"YfinanceFetcher", "LongbridgeFetcher", "FinnhubFetcher", "AlphaVantageFetcher"}
+        _US_CAPABLE_FETCHERS = {
+            "YfinanceFetcher",
+            "LongbridgeFetcher",
+            "FinnhubFetcher",
+            "AlphaVantageFetcher",
+            "TwelveDataFetcher",
+        }
         for fetcher in self._get_fetchers_snapshot():
             if not hasattr(fetcher, 'get_stock_name'):
                 continue

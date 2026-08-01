@@ -41,6 +41,7 @@ jobs:
         env:
           ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }}
           SERVERCHAN3_SENDKEY: ${{ secrets.SERVERCHAN3_SENDKEY }}
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           STOCK_LIST: IREN,DRAM,RKLB,NBIS,MRVL,MSFT,TSLA,ORCL
           REPORT_TYPE: simple
           REPORT_LANGUAGE: zh
@@ -50,7 +51,7 @@ jobs:
           MAX_WORKERS: '1'
           ANALYSIS_DELAY: '0'
           TRADING_DAY_CHECK_ENABLED: 'true'
-          REALTIME_SOURCE_PRIORITY: yfinance,stooq
+          REALTIME_SOURCE_PRIORITY: yfinance,twelvedata,stooq
         run: |
           FORCE_RUN_ARG=""
           if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
