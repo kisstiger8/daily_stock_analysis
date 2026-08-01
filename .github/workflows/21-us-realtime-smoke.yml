@@ -1,0 +1,77 @@
+name: 美股实时行情线路测试
+run-name: 美股实时行情线路测试
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: '测试股票代码'
+        required: false
+        default: MSFT
+        type: string
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 测试实时行情链路
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          ENABLE_REALTIME_QUOTE: 'true'
+          REALTIME_SOURCE_PRIORITY: yfinance,twelvedata,stooq
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+
+          from data_provider import DataFetcherManager
+          from data_provider.twelvedata_fetcher import TwelveDataFetcher
+          from src.config import Config
+
+          symbol = "${{ github.event.inputs.symbol }}".strip().upper() or "MSFT"
+          if not os.getenv("TWELVEDATA_API_KEY"):
+              print("TWELVEDATA_API_KEY secret is missing")
+              sys.exit(1)
+
+          Config.reset_instance()
+          manager = DataFetcherManager()
+          routed = manager.get_realtime_quote(symbol)
+          if not routed or not routed.has_basic_data():
+              print(f"Realtime route failed for {symbol}")
+              sys.exit(1)
+
+          routed_source = getattr(getattr(routed, "source", None), "value", None)
+          print(
+              "route_ok "
+              f"symbol={symbol} "
+              f"source={routed_source} "
+              f"has_volume={bool(getattr(routed, 'volume', None))}"
+          )
+
+          direct = TwelveDataFetcher().get_realtime_quote(symbol)
+          if not direct or not direct.has_basic_data():
+              print(f"Twelve Data quote failed for {symbol}")
+              sys.exit(1)
+
+          print(
+              "twelvedata_ok "
+              f"symbol={symbol} "
+              f"has_volume={bool(getattr(direct, 'volume', None))}"
+          )
+          PY
