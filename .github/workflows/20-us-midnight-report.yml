@@ -41,7 +41,7 @@ jobs:
         env:
           ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }}
           SERVERCHAN3_SENDKEY: ${{ secrets.SERVERCHAN3_SENDKEY }}
-          STOCK_LIST: MU,NOK,IREN,DRAM,RKLB,SPCX,NBIS,MRVL,MSFT,TSLA,ORCL
+          STOCK_LIST: IREN,DRAM,RKLB,NBIS,MRVL,MSFT,TSLA,ORCL
           REPORT_TYPE: simple
           REPORT_LANGUAGE: zh
           SINGLE_STOCK_NOTIFY: 'false'
